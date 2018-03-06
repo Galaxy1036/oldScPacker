@@ -1,7 +1,7 @@
-##oldScPacker
+## oldScPacker
 **oldScPacker** is a python script that allows you to inject PNG files into .sc files, **.sc** files are specific files used by **Supercell** in their own game engine.
 
-###How to use it ?
+### How to use it ?
 The basic usage to inject one PNG is:  
 
 > python Main.py <png\_file\> -sc <sc_file\>
@@ -21,7 +21,7 @@ Example:
 > python Main.py chr\_magic\_archer\_dl\.png  chr\_magic\_archer\_dl\_.png -sc chr\_magic\_archer\_dl.sc
 
 
-###Options
+### Options
 **oldScPacker** can also takes few optionals arguments which are:  
 
 * `-c`: if this argument is specified .sc file will be compressed using lzma
@@ -32,7 +32,7 @@ Example:
 Command Example:
 > python Main.py chr\_magic\_archer\_dl\.png  chr\_magic\_archer\_dl\_.png -sc chr\_magic\_archer\_dl.sc -lzma -c -header -o afilename.sc
 
-###Dependencies
+### Dependencies
 **oldScPacker** only need one external library which is **Pillow**, install it with:  
  
 > python -m pip install Pillow
