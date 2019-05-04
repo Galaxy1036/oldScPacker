@@ -3,6 +3,7 @@
 import os
 import sys
 import lzma
+import lzham
 import hashlib
 import argparse
 
@@ -13,14 +14,15 @@ from Writer import BinaryWriter
 
 class Packer(BinaryWriter):
 
-    def __init__(self, scFile, useLzma, compress, header, outputName=None, scPath=None):
+    def __init__(self, scFile, decompress, use_lzma, use_lzham, header, outputName):
         self.settings = {
-                         'compress': compress,
+                         'use_lzma': use_lzma,
+                         'use_lzham': use_lzham,
                          'header': header,
-                         'outputName': outputName,
-                         'scPath': scPath
+                         'outputName': outputName
                          }
-        if useLzma:
+
+        if decompress:
             self.reader = BinaryReader(self.decompress(scFile))
 
         else:
@@ -31,30 +33,35 @@ class Packer(BinaryWriter):
 
     def decompress(self, data):
         if data[:2] == b'SC':
-            data = data[26:35] + (b'\x00' * 4) + data[35:]
+            # Skip the header if there's any
+            hash_length = int.from_bytes(data[6: 10], 'big')
+            data = data[10 + hash_length:]
+
+        if data[:4] == b'SCLZ':
+            print('[*] Detected LZHAM compression !')
+
+            dict_size = int.from_bytes(data[4:5], 'big')
+            uncompressed_size = int.from_bytes(data[5:9], 'little')
 
             try:
-                data = lzma.LZMADecompressor().decompress(data)
-                print('[*] Successfully decompressed using latest format')
+                data = lzham.decompress(data[9:], uncompressed_size, {'dict_size_log2': dict_size})
 
-            except lzma.LZMAError:
-                print('[*] Decompression failed using latest format !')
+            except Exception as exception:
+                print('Decompression failed !')
                 sys.exit()
 
-        elif data[:2] == b']\x00':
+        else:
+            print('[*] Detected LZMA compression !')
             data = data[0:9] + (b'\x00' * 4) + data[9:]
 
             try:
                 data = lzma.LZMADecompressor().decompress(data)
-                print('[*] Successfully decompressed using old format')
 
-            except lzma.LZMAError:
-                print('[*] Decompression failed using old format !')
+            except Exception as exception:
+                print('Decompression failed !')
                 sys.exit()
 
-        else:
-            print('[*] Can\'t recognize your file, maybe he is already decompressed !')
-            sys.exit()
+        print('[*] Decompression succeed !')
 
         return data
 
@@ -96,20 +103,13 @@ class Packer(BinaryWriter):
             else:
                 self.write(self.reader.read(dataBlockSize))
 
-        if self.settings['compress']:
+        if self.settings['use_lzma'] or self.settings['use_lzham']:
             self.compress_data()
 
-        if self.settings['outputName'] is not None:
-            outputName = self.settings['outputName']
-
-        else:
-            outputName = ''.join(list(filter(None, self.settings['scPath'].split('.sc')))) + '_packed.sc'
-
-        with open(outputName, 'wb') as f:
+        with open(self.settings['outputName'], 'wb') as f:
             f.write(self.buffer)
 
     def inject_texture(self):
-
         pixelType = self.reader.read_byte()
         imageWidth = self.reader.read_uint16()
         imageHeight = self.reader.read_uint16()
@@ -194,22 +194,30 @@ class Packer(BinaryWriter):
             self.write_uint8(red)
 
     def compress_data(self):
-        # TODO: find good filters values to get exactly the same compressed files as the original one
-        print('[*] Compressing .sc file')
+        if self.settings['use_lzma']:
+            print('[*] Compressing .sc with lzma')
 
-        filters = [
-                   {
-                    "id": lzma.FILTER_LZMA1,
-                    "dict_size": 256 * 1024,
-                    "lc": 3,
-                    "lp": 0,
-                    "pb": 2,
-                    "mode": lzma.MODE_NORMAL
-                    },
-                   ]
+            filters = [
+                       {
+                        "id": lzma.FILTER_LZMA1,
+                        "dict_size": 256 * 1024,
+                        "lc": 3,
+                        "lp": 0,
+                        "pb": 2,
+                        "mode": lzma.MODE_NORMAL
+                        },
+                       ]
 
-        compressed = lzma.compress(self.buffer, format=lzma.FORMAT_ALONE, filters=filters)
-        compressed = compressed[0:5] + len(self.buffer).to_bytes(4, 'little') + compressed[13:]
+            compressed = lzma.compress(self.buffer, format=lzma.FORMAT_ALONE, filters=filters)
+            compressed = compressed[0:5] + len(self.buffer).to_bytes(4, 'little') + compressed[13:]
+
+        else:
+            print('[*] Compressing .sc with lzham')
+
+            dict_size = 18
+
+            compressed = lzham.compress(self.buffer, {'dict_size_log2': dict_size})
+            compressed = 'SCLZ'.encode('utf-8') + dict_size.to_bytes(1, 'big') + len(self.buffer).to_bytes(4, 'little') + compressed
 
         fileMD5 = hashlib.md5(self.buffer).digest()
 
@@ -232,40 +240,47 @@ class Packer(BinaryWriter):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='oldScPacker is a tool that allows you to insert PNG files into .sc files')
     parser.add_argument('files', help='PNG files to inject into .sc', nargs='+')
-    parser.add_argument('-c', '--compress', help='enable LZMA compression', action='store_true')
+    parser.add_argument('-lzma', '--lzma', help='Compress the output .sc with LZMA', action='store_true')
+    parser.add_argument('-lzham', '--lzham', help='Compress the output .sc with LZHAM', action='store_true')
     parser.add_argument('-header', '--header', help='add SC header to the beginning of the compressed .sc', action='store_true')
-    parser.add_argument('-lzma', '--lzma', help='decompress .sc file', action='store_true')
+    parser.add_argument('-d', '--decompress', help='decompress your .sc before injecting PNG into it', action='store_true')
     parser.add_argument('-o', '--outputname', help='define an output name for the .sc file (if not specified the output filename is set to <scfilename> + _packed.sc')
     parser.add_argument('-sc', '--scfile', help='.sc where PNG should be injected', required=True)
 
     args = parser.parse_args()
 
     if args.scfile.endswith('.sc') and not args.scfile.endswith('tex.sc'):
-        if os.path.exists(args.scfile):
-            with open(args.scfile, 'rb') as f:
-                if args.outputname:
-                    scPacker = Packer(f.read(), args.lzma, args.compress, args.header, args.outputname)
-
-                else:
-                    scPacker = Packer(f.read(), args.lzma, args.compress, args.header, scPath=args.scfile)
-
-            for file in args.files:
-                if file.endswith('.png'):
-                    if os.path.exists(file):
-                        scPacker.load_image(file)
+        if not (args.lzma and args.lzham):
+            if os.path.isfile(args.scfile):
+                with open(args.scfile, 'rb') as f:
+                    if args.outputname:
+                        output_name = args.outputname
 
                     else:
-                        print('[*] {} don\'t exists'.format(file))
+                        output_name = '_packed'.join(os.path.splitext(args.scfile))
+
+                    scPacker = Packer(f.read(), args.decompress, args.lzma, args.lzham, args.header, output_name)
+
+                for file in args.files:
+                    if file.endswith('.png'):
+                        if os.path.isfile(file):
+                            scPacker.load_image(file)
+
+                        else:
+                            print('[*] {} don\'t exists'.format(file))
+                            sys.exit()
+
+                    else:
+                        print('[*] Only .png files are supported !')
                         sys.exit()
 
-                else:
-                    print('[*] Only .png files are supported !')
-                    sys.exit()
+                scPacker.pack()
 
-            scPacker.pack()
+            else:
+                print('[*] {} don\'t exists'.format(args.scfile))
 
         else:
-            print('[*] {} don\'t exists'.format(args.scfile))
+            print('[*] You cannot set both lzma and lzham compression !')
 
     else:
-        print('[*] Only .sc files are supported (_tex.sc not include) !')
+        print('[*] Only .sc files are supported (not _tex.sc) !')

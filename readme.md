@@ -24,15 +24,16 @@ Example:
 ### Options
 **oldScPacker** can also takes few optionals arguments which are:  
 
-* `-c`: if this argument is specified .sc file will be compressed using lzma
+* `-lzma`: if this argument is specified .sc file will be compressed using lzma
+* `-lzham`: if this argument is specified .sc file will be compressed using lzham
 * `-header`: add Supercell header at the beginning of the compressed .sc file
 * `-o`: optionnal output filename for the .sc file, if this argument isn't specified .sc file will be saved as <sc\_filename\> + _packed.sc 
-* `-lzma`: decompress the .sc file before injecting PNG
+* `-d`: decompress the .sc file before injecting PNG
 
 Command Example:
-> python Main.py chr\_magic\_archer\_dl\.png  chr\_magic\_archer\_dl\_.png -sc chr\_magic\_archer\_dl.sc -lzma -c -header -o afilename.sc
+> python Main.py chr\_magic\_archer\_dl\.png  chr\_magic\_archer\_dl\_.png -sc chr\_magic\_archer\_dl.sc -d -lzma -header -o afilename.sc
 
 ### Dependencies
-**oldScPacker** only need one external library which is **Pillow**, install it with:  
+To install **oldScPacker** dependencies run the following command 
  
-> python -m pip install Pillow
+> python -m pip install -r requirements.txt
